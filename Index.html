@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<!-- Native borderless application capability tags for iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Mnemosyne Theatre</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  body, html { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  
+  /* Stage with full viewport-fit awareness for notches */
+  #stage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  .slide { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1); }
+  .active { opacity: 1; z-index: 2; }
+  
+  /* The HUD: Hidden by default, exposed on tap */
+  #hud { position: absolute; top: max(15px, env(safe-area-inset-top)); left: max(20px, env(safe-area-inset-left)); right: max(20px, env(safe-area-inset-right)); bottom: max(15px, env(safe-area-inset-bottom)); z-index: 100; pointer-events: none; opacity: 0; transition: opacity 0.3s ease; display: flex; flex-direction: column; justify-content: space-between; }
+  #hud.show { opacity: 1; pointer-events: auto; }
+  
+  .hud-group { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  
+  #counter { color: rgba(255, 255, 255, 0.4); font-size: 11px; font-family: monospace; text-transform: uppercase; }
+  
+  .hud-btn { width: 40px; height: 40px; display: flex; justify-content: center; align-items: center; color: white; border: 1.5px solid rgba(255,255,255,0.3); border-radius: 50%; font-size: 18px; pointer-events: auto; cursor: pointer; transition: background 0.2s; }
+  .hud-btn.active { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.8); }
+  
+  /* Duration Slider */
+  #speed-group { display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.6); font-size: 12px; font-family: monospace; pointer-events: auto; }
+  input[type=range] { -webkit-appearance: none; width: 110px; background: transparent; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 2px; cursor: pointer; background: rgba(255,255,255,0.2); border-radius: 2px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #FFF; cursor: pointer; margin-top: -7px; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
+
+</style>
+</head>
+<body>
+<div id="stage">
+  <img id="view-a" class="slide active" src="" alt="">
+  <img id="view-b" class="slide" src="" alt="">
+</div>
+
+<!-- Control HUD Overlay -->
+<div id="hud">
+  <div class="hud-group">
+    <div id="counter">INITIALIZING...</div>
+    <div class="hud-group">
+      <div id="btn-back" class="hud-btn">&#10229;</div>
+      <div id="btn-play" class="hud-btn active">&#9205;</div>
+    </div>
+  </div>
+  
+  <div class="hud-group">
+    <div id="speed-group">
+      <span>TIME: <span id="speed-display">6s</span></span>
+      <input type="range" id="speed-input" min="3" max="60" value="6" step="1">
+    </div>
+    <div id="btn-info" class="hud-btn">?</div>
+  </div>
+</div>
+
+<script>
+const rawUrls = ["https://lh3.googleusercontent.com/pw/AP1GczOOfr2jaINc_sgWUfhdeoQXxf0MciS6QJ5X0I0efId36btlS2D2G56i0_iUD25p_KEzF-AZqVLRjQ4gRymwQWz3wfUG8ROllTHqPcREUlsslCH4k1G4", "https://lh3.googleusercontent.com/pw/AP1GczMm_l2UOqbbvrdo6wZA-OJQWYtcXM-FTQole0aA4rvbdZveekWVcHmlnVVpII9_cEWxjDGXn23VIVRnGcB_daNNpYZ8VixBEPISny5WSb5d7BZ8ruoi", "https://lh3.googleusercontent.com/a", "https://lh3.googleusercontent.com/pw/AP1GczPGiIxQDajMr44q864YbX5UyyXjPQvrs-O6Oz0N_4juM2VRwEIQYC2Yaff96ruXWzbjUPEc9elg80TopQSCXqyD4Fab8LqDUpjuG5QGxqbEw0Z502Ap", "https://lh3.googleusercontent.com/pw/AP1GczPB4wmspnlCmXfhF5UWBQE9lvOHwgszEIpCPR0UBDYeIiC-B6pYeTDVJeLmIZOZCRCTVs_VF7JUBmm3lhjcCdSiV7NxiVoejBiBvuAmgK4WxUHJqFNG", "https://lh3.googleusercontent.com/pw/AP1GczMnqYrSb0DAUULCro0Gu4FRcWi9YAPbRFGvqOo0eCfaY8BS1MEX5Jmt2wGshuSeF2W44esDyMzF0C48eOf_YwCVvUfZgc5l-plAn-R7M45a38FkkuH-", "https://lh3.googleusercontent.com/-XdUIqdMkCWA", "https://lh3.googleusercontent.com/pw/AP1GczPl0fw_WtA-K2k-ioR_fMGsPMc5vD7MetNFd6-Zo6ELOMw10ACUS2yP8EJrKgJ9zdsPS2SDE_A7koi1ICovNGH_kR33kWM17QmroIZj83w7GAuPXWZ_", "https://lh3.googleusercontent.com/pw/AP1GczOuie-lKvC4CO7nqin1ts8DS2-GcPjx_VKRZBr_XsAQwPS2EfbHDnuOu2gW3Dnvt6pRZv8YGDONxgqLEqi5_4ky8tk6gLBnocEdmUu4uucfb5udi6NO", "https://lh3.googleusercontent.com/pw/AP1GczMObKbSm9wn8JWrl9DRF7-DfZF4xE23U4bocahJnNPpF1PQs6B0MtUHnA7dEDfhwtg_IbK9774TnfrVzk04GjygwWD9vG96mjssJd61zPxIJht6pQbb", "https://lh3.googleusercontent.com/pw/AP1GczP-Ou1M0k0iqMfB26uce2KB-SbJViaTeDRNYuWfwGEqpuRdJmBNG3vBkMxcTp1_0VHEFv7uKlCowjLvER7Rv3LOcZsPbGUMho4v1ODrsW93CAulAlmD", "https://lh3.googleusercontent.com/pw/AP1GczMoHqIA7w3b64004lneF7Y8DG6KHr9cyaqIKiePXH94d39BQk9OiS7FBuEhBIHXF6sylc8Xpr6dhQyLrNhz13xuytu_EELxTwHEWPZaeZLmeWXaLS_U", "https://lh3.googleusercontent.com/pw/AP1GczN5lgi2yAjYhf8XBle4ibSHAEvJySL4LH9MY6ktENc5Q1OBY1Sr4rBvet6R_eaDtEQxxbXj02Jr4UvQjVOepia_AlfyN_p01K972V9rHyWMC2T3vNZw", "https://lh3.googleusercontent.com/pw/AP1GczNs3WraYAu6dZ_cRlTAL-_d39UdBc5SnIImWFm5oOUj8yZU6PS3rAF__U6QteihI2QF1D8I2CXsCcC1ttit1mIJwBS22I_fhrC-gvTpOW15KfbJd-bx", "https://lh3.googleusercontent.com/pw/AP1GczN6lJSipzO2FeI-tmHGtxK185PmYfkfTs1xqgl_CABIFC8dpjfrBfyLA8FIeMlNI7CL7ZU1KZCj7kbXhfPFmw2FalETVumhkFcpvMbgibhbWKPLHJ8j", "https://lh3.googleusercontent.com/pw/AP1GczPZfXvolZeJDHOvnlQybAh39uMyYCkFND6leqqWXiiElEdpdfZ5qKdefepCBcgu0yXCOhRpWZOi9tXVRzHDyoV2GqXcIYoU31iNOGkniWxaN8qiqSm6", "https://lh3.googleusercontent.com/pw/AP1GczMzDgKRnDJZ2e6VD3RYdS9IwZ2p37cIpMzf8JE2lAmuI6xcf87XrVkZUmb5_xE5DjrTpkON8d1DetlnyIZlwKsteL_DQqBYtDlPxMwhBti2OVSDLtSR", "https://lh3.googleusercontent.com/pw/AP1GczO1zJe3XcKEUFJzfHYmLgfkF6XPERe31XsaQpBNZjseIHtSbjcoyf-DqPnEeJw0tg7q0w5MeKdVEn4GQUjayhhhkJW_51wiI65DFKTOyigtwawwPo_q", "https://lh3.googleusercontent.com/pw/AP1GczPpNObElsm2Cw538ZhwoKZkM1h61zX5TLvFhXQVhxvmHFgQVLcAj5TDT-2_oM3_0qOjZAMR1_CVvdKJ4Qo4AdT8s-aWbN1G_uhbX2eZgG21JJuVnzB1", "https://lh3.googleusercontent.com/pw/AP1GczO4brLJDhUxUWgYdQLW1xrRzPoqgV4uUR9AfHZIuoF0wzYEld9F5yQdUfJ-kSx09ac8mqpFag6SWit1yBQjU5_E91XXhnmsiG2gxBVXK6BZ0TGbdWOa", "https://lh3.googleusercontent.com/pw/AP1GczPTgvqWm5DplouRT9W-bd1aka8745oxAYHNxicTJrdhxj12QPhcEv7OHYaY7WOGT6J1GfsOFjFpIBfBnXVmJaa8sFSj-5DXWquRJVkqHuIDnGKmWoN4", "https://lh3.googleusercontent.com/pw/AP1GczNFOpp2A6AwAIa2Ia4iYNcLh5xDwlEV9KDfLOE9dT7dQPGsINIWNLysARplHp3r0P1r5SyaXuIwJrcFQ6wAO0M1tdgDl24wBk8PFzZJ-m-y_R6Z5ved", "https://lh3.googleusercontent.com/pw/AP1GczNc4rBMXG8ZBmIyrLuwYqa0KaPxv6ZREA589hlyZQgpeclfMYLBEIUJFx5H21-bUDK316JcYOJ94DoFdgQ7fI6CUyARABW6TW2G-fHmz4so523bPh9I", "https://lh3.googleusercontent.com/pw/AP1GczNmpKSnxB4WZnJiXFKPhRxOTLXez61vSMWl9lr0R6ADtIgdq284YDbLcOHj7il1nPcjTgkl6W2oJxGL6qwvMS5X0CV5nTrpJq2z3sc14sdzdmJZchp6", "https://lh3.googleusercontent.com/pw/AP1GczOARXOfrvue_NgLz7MtBqk-8LMpIv_c2B-PgV-8m11V2Gnega0DC5VxgL7vGvUMOxlr_tA0nCyQaJB-GbmTiSdU3bK-ouPeKBix3wiqm8eZLhsEls8H", "https://lh3.googleusercontent.com/ogw", "https://lh3.googleusercontent.com/pw/AP1GczNQnfE0tTkfKjS6-Abo_jk1NakgClpAAsDowLpeBVf0g5N1j0TgN8ECsKTOZKmLOBPNSA_T6fhbNgOmIFBElhPt4rpxLGRitgLNYZrtQR9rITWsa3zr", "https://lh3.googleusercontent.com/pw/AP1GczM8VzaHgBy954yZ_HVHITbUienq-IWvm1UfOD7Vlx7-0ApoxGccEZxrQRb8IKYAOLaTa2-5yI6Zz_THXn4QgQAP_hOAIIK5N77y0NbznZpgPmumPDka", "https://lh3.googleusercontent.com/pw/AP1GczMYxFtI-lar3qgNbHoxPNKExDZLsxNEExQk_aNg7hHElpfAZWeT1_QivKZ5W5QG0at4_-kNvIg3HwbHkWmHFs6RTahGBpSyGrNsupCYmwk1FzLV6SEV", "https://lh3.googleusercontent.com/pw/AP1GczMRaAI3aBRyX3oFWWcNyGwJjAztB0asCOsbgNVW5PBGoqazK6EWM-i2-oKulxcJs0j32girWr09phKx9bw8aZvUzn4LK-uQ2_ARflwOudL2oiRPuxZr", "https://lh3.googleusercontent.com/pw/AP1GczO4i-n-YcTSUaRm6Gw16f8LvKY3rOopv1AICWcXK7b4YjXs18ct89CQbmb6_qg_FUCy6y8PcZN3QJ3UcwPVHp7eRhRULNIn-F3L8BxbbrHy_GM03ZUm", "https://lh3.googleusercontent.com/pw/AP1GczOfQ4QeNx2sXdBAsz2sGNJS3ojrHcvGwerNfjplUeu5LDy2oHbstDBwvZTZnJsUaWu8wT7MFhy17W0NckJ_pHOotkahrnGN6Z0hvwmac5-fu56XNxfM", "https://lh3.googleusercontent.com/pw/AP1GczM91AZP9rAQoy9jI6iYOrVJtoNHGVXP6M4Ei38-qP7ehCeKW_5fSNblX2SiwQquh7r-6UCJvHgtCLlyLSZQ7CLmwzRrQJI1Tunu1_-QRp6F80AS2pBa", "https://lh3.googleusercontent.com/pw/AP1GczMnF31IEMsIjJ1nDfggPOfF-9bLsgB1RQI5g-cwhmHLqSZaRn9KbsA5GKt0MxHoWMPACV4UTBhIyYAg1x0ynZahqJH3TXKxXs1ALKn0nImoUwWlax6a", "https://lh3.googleusercontent.com/pw/AP1GczMCycMjFfFh4ZbpgbQLrKiD8CUTXaUnNjYSXRHPyuv0eTdrtdg5nbYck1OLGlKx--bk65Z5NlkVfIkvClJkPDfy09evhSfAI9YAsgt2kV-MVBQt06gq", "https://lh3.googleusercontent.com/pw/AP1GczN3my73UfWbRZ1FTSXgPW5uUPjMJRvo8yA1gKTRBG-Q7ZxJ6SaAqtCbTpSSt_fvTdrzXKcSWjSDv5PzpEs1wAzefQxHC9-9rie8UIXqqNxLpm8dhAKk", "https://lh3.googleusercontent.com/pw/AP1GczNhd5rayNMW3IVIMk64C4MxHnx-fOjgNHzBgf1jb49ddQtB3O72paMg2Qj4cI8T_tNX8hUzPcR71wOgNxLtDB1UThy3IaXnffLw7rBSBUkmdI0UELZl"];
+
+// Fisher-Yates unbiased shuffle
+function shuffle(arr) {
+  let m = arr.length, t, i;
+  while (m) {
+    i = Math.floor(Math.random() * m--);
+    t = arr[m];
+    arr[m] = arr[i];
+    arr[i] = t;
+  }
+  return arr;
+}
+
+const deck = shuffle([...rawUrls]);
+let index = 0;
+let isA = true;
+let timer = null;
+let isPaused = false;
+let duration = 6000; // Default: 6 seconds
+
+// Elements
+const viewA = document.getElementById('view-a');
+const viewB = document.getElementById('view-b');
+const counter = document.getElementById('counter');
+const hud = document.getElementById('hud');
+const btnPlay = document.getElementById('btn-play');
+const speedInput = document.getElementById('speed-input');
+const speedDisplay = document.getElementById('speed-display');
+
+function getUrl(base) {
+  // dynamic resizing: 2.5K high-res vectors
+  return base + '=w2560-h1440-no';
+}
+
+function restartTimer() {
+  clearInterval(timer);
+  if (!isPaused && deck.length > 1) {
+    timer = setInterval(step, duration);
+  }
+}
+
+function step() {
+  if (deck.length === 0) return;
+  const current = isA ? viewA : viewB;
+  const next = isA ? viewB : viewA;
+  index = (index + 1) % deck.length;
+  
+  next.src = getUrl(deck[index]);
+  next.onload = () => {
+    next.classList.add('active');
+    current.classList.remove('active');
+    isA = !isA;
+    counter.textContent = (index + 1) + ' / ' + deck.length;
+    // Pre-cache next vector in the background pipeline
+    const prefetch = new Image();
+    prefetch.src = getUrl(deck[(index + 1) % deck.length]);
+  };
+}
+
+function stepBack() {
+  if (deck.length < 2) return;
+  const current = isA ? viewA : viewB;
+  const next = isA ? viewB : viewA;
+  // Move index back two spots, accounting for modulo
+  index = (index - 1 + deck.length) % deck.length;
+  // Adjust again to load the *previous* image, as step() moves forward 1
+  index = (index - 1 + deck.length) % deck.length;
+  step(); // Trigger the normal step() to load it
+}
+
+function togglePause() {
+  isPaused = !isPaused;
+  btnPlay.classList.toggle('active', !isPaused);
+  if (isPaused) {
+    clearInterval(timer);
+    btnPlay.innerHTML = "&#9208;"; // Pause Icon
+  } else {
+    btnPlay.innerHTML = "&#9205;"; // Play Icon
+    step(); // immediately go to next image
+    restartTimer();
+  }
+}
+
+// Initialize
+if (deck.length > 0) {
+  viewA.src = getUrl(deck[0]);
+  viewA.onload = () => {
+    counter.textContent = '1 / ' + deck.length;
+    restartTimer();
+  };
+} else {
+  counter.textContent = 'ZERO ASSETS';
+}
+
+// INTERACTIONS
+
+// Tap main stage to toggle HUD
+document.getElementById('stage').addEventListener('click', (e) => {
+  if (e.target.closest('#hud')) return; // ignore taps on controls themselves
+  hud.classList.toggle('show');
+});
+
+btnPlay.addEventListener('click', togglePause);
+document.getElementById('btn-back').addEventListener('click', (e) => { e.stopPropagation(); stepBack(); restartTimer(); });
+
+// Control Time Duration
+speedInput.addEventListener('input', (e) => {
+  duration = parseInt(e.target.value, 10) * 1000;
+  speedDisplay.textContent = e.target.value + 's';
+  restartTimer();
+});
+
+// Keyboard (for completeness, and if Bluetooth keybd attached)
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { togglePause(); }
+  else if (e.code === 'ArrowRight') { step(); restartTimer(); }
+  else if (e.code === 'ArrowLeft') { stepBack(); restartTimer(); }
+});
+
+</script>
+</body>
+</html>
